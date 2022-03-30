@@ -1,0 +1,7 @@
+scikit-learn
+pandas
+pytest
+cryptography
+click
+pydantic[dotenv]
+fastapi

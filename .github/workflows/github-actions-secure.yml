@@ -1,0 +1,47 @@
+name: Secure CI/CD workflow
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  secure_code:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@5a4ac9002d0be2fb38bd78e4b4dbde5606d7042f
+      - name: Set up Python 3.8
+        uses: actions/setup-python@dc73133d4da04e56a135ae2246682783cc7c7cb6
+        with:
+          python-version: "3.8"
+          architecture: "x64"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Generate key file
+        env:
+          ENCRYPTION_KEY: ${{ secrets.FERNET_KEY }}
+        run: echo "key = '"$ENCRYPTION_KEY"'"  > ./src/key/fernet_key.py
+      - name: Encrypt model file
+        env:
+          ENCRYPTION_KEY: ${{ secrets.FERNET_KEY }}
+        run: export $(cat ./src/.env | xargs); python ./src/encryption/fernet_encryption.py encrypt-file $ENCRYPTION_KEY ./src/model/$MODEL_FILE_NAME ./src/model/$SECURE_MODEL_FILE_NAME; ls -ls ./src/model
+      - name: Test encryption correctness - non encrypted
+        run: (cd ./src && pytest test)
+      - name: Change .env to indicate running in encrypted mode
+        run: echo "USE_SECURE=True"  >> ./src/.env
+      - name: Test encryption correctness - after encrypted mode
+        run: (cd ./src && pytest test)
+      - name: Obfuscate code
+        run: pip install pyarmor; pyarmor obfuscate --recursive ./src/inference.py
+      - name: Copy env and secure model files
+        run: export $(cat ./src/.env | xargs); cp ./src/.env ./dist/; cp ./src/model/$SECURE_MODEL_FILE_NAME ./dist/model/$SECURE_MODEL_FILE_NAME
+      - name: Test obfuscation correctness
+        run: (cd ./dist && python inference.py)
+      - name: Prepare packaged artifact
+        run: tar -czvf secure-inference.tar.gz -C dist .
+      - name: Publish artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: secure-inference-package
+          path: secure-inference.tar.gz
